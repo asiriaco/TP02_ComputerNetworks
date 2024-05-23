@@ -24,7 +24,12 @@ int id = -1;
 //server is a flag that indicates to which server the message should be sent. 0 for the SCII server and 1 for the SE server
 char* parse_message(char* buf, int *server){
 	char* message = "";
-	if (strncmp(buf, "display info se", strlen("display info se")) == 0){
+	if (strncmp(buf, "kill", strlen("kill")) == 0){
+		char kill_message[BUFSZ];
+		sprintf(kill_message, "REQ_REM(%d)", id);
+		message = kill_message;
+	}
+	else if (strncmp(buf, "display info se", strlen("display info se")) == 0){
 		message = "REQ_INFOSE";
 		*server = 1;
 	}
@@ -40,19 +45,31 @@ char* parse_message(char* buf, int *server){
 }
 
 void parse_response(char* buf, int server){
-	if(strncmp(buf, "RES_INFOSE", strlen("RES_INFOSE")) == 0){
 
-		printf("SE: %s\n", buf + strlen("RES_INFOSE"));
+	if (strncmp(buf, "RES_ADD", strlen("RES_ADD")) == 0){
 		strtok(buf, "(");
 		int _id = atoi(strtok(NULL, ")"));
 		id = _id;
-		if (server == 0){
+		if (server == 1){
 			printf("Servidor SE New ID: %d\n", id);
 		}
-		else {
+		else if (server == 0){
 			printf("Servidor SCII New ID: %d\n", id);
 		}
 	}
+
+	else if(strncmp(buf, "RES_INFOSE", strlen("RES_INFOSE")) == 0){
+		strtok(buf, "(");
+		int value = atoi(strtok(NULL, ")"));
+		printf("producao atual: %d\n", value);
+	
+	}
+	else if (strncmp(buf, "RES_INFOSCII", strlen("RES_INFOSCII")) == 0){
+		strtok(buf, "(");
+		int value = atoi(strtok(NULL, ")"));
+		printf("consumo atual: %d\n", value);
+	}
+
 }
 
 int check_availability(int sock){
@@ -106,29 +123,38 @@ int main(int argc, char **argv) {
 	addrtostr(SCII_addr, addrstr_SCII, BUFSZ);
 
 	int server = 0;
-	int available = check_availability(SE_socket) && check_availability(SCII_socket);
+	int available = (check_availability(SE_socket) && check_availability(SCII_socket));
 
 	if (!available){
 		logerror(01);
 	}
 	else{
-		int count = 0;
+		size_t count = 0;
 		char buf[BUFSZ];
 		memset(buf, 0, BUFSZ);
 
+		//send request to add a new client
 		count = send(SE_socket, "REQ_ADD", strlen("REQ_ADD"), 0);
 		count = send(SCII_socket, "REQ_ADD", strlen("REQ_ADD"), 0);
-		
-		if(count != strlen("REQ_ADD") + 1){
+
+		if(count != strlen("REQ_ADD")){
 			logexit("EXIT_FAILURE");
 		}
 
+		//print response for SE server initialization
 		count = recv(SE_socket, buf, BUFSZ, 0);
+		parse_response(buf, 1);
+
+		//print response for SCII server initialization
+		count = recv(SCII_socket, buf, BUFSZ, 0);
+		parse_response(buf, 0);
+
 	}
 
 	while(available){
 		char buf[BUFSZ];
 		char* message = "";
+		int kill = 0;
 
 		memset(buf, 0, BUFSZ);
 		printf("mensagem> ");
@@ -136,26 +162,50 @@ int main(int argc, char **argv) {
 
 		message = parse_message(buf, &server);
 
+		//check if the message is a kill message
+		if (strncmp(message, "REQ_REM", strlen("REQ_REM")) == 0){
+			kill = 1;
+		}
+
 		size_t count = 0;
-		if(server == 0){
+
+		//if kill
+		if(kill){
+
+			char* kill_message = strdup(message);
+			//send message to the SE server
+			count = send(SE_socket, kill_message, strlen(kill_message) + 1, 0);
+
+			//send message to the SCII server
+			count = send(SCII_socket, message, strlen(kill_message) + 1, 0);
+		}
+
+		//send message to the current server
+		if(kill == 1 || server == 0){
 			count = send(SCII_socket, message, strlen(message) + 1, 0);
 		}
-		else{
+		else if (kill == 1 || server == 1){
 			count = send(SE_socket, message, strlen(message) + 1, 0);
 		}
+
 		if(count != strlen(message) + 1){
 			logexit("EXIT_FAILURE");
 		}
 
 		memset(buf, 0, BUFSZ);
-		if(server == 0){
+
+		if(server == 0 || kill == 1){
 			count = recv(SCII_socket, buf, BUFSZ, 0);
 		}
-		else{
+		else if (server == 1 || kill == 1){
 			count = recv(SE_socket, buf, BUFSZ, 0);
 		}
 
-		//parse_response(buf);
+		parse_response(buf, server);
+
+		if(kill == 1 && strncmp(buf, "OK(01)", strlen("OK(01)")) == 0){
+			break;
+		}
 	}
 
 	close(SE_socket);

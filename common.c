@@ -15,7 +15,13 @@ void logerror(int code){
             break;
     }
 }
-
+void logok(int code){
+    switch(code){
+        case 01:
+            printf("Successful disconnect\n");
+            break;
+    }
+}
 
 void logexit(const char *msg) {
 	perror(msg);
