@@ -26,7 +26,7 @@ char* parse_message(char* buf, int *server){
 	char* message = "";
 	if (strncmp(buf, "kill", strlen("kill")) == 0){
 		char kill_message[BUFSZ];
-		sprintf(kill_message, "REQ_REM(%d)", id);
+		sprintf(kill_message, "REQ_REM %d", id);
 		message = kill_message;
 	}
 	else if (strncmp(buf, "display info se", strlen("display info se")) == 0){
@@ -44,11 +44,15 @@ char* parse_message(char* buf, int *server){
 	return message;
 }
 
-void parse_response(char* buf, int server){
+//return an integer in case of status being consulted. 0 for low, 1 for moderate, 2 for high
+//in cases where the response is not a status, return -1
+int parse_response(char* buf, int server){
 
+	int response_code = -1;	
 	if (strncmp(buf, "RES_ADD", strlen("RES_ADD")) == 0){
-		strtok(buf, "(");
-		int _id = atoi(strtok(NULL, ")"));
+
+		strtok(buf, " ");	
+		int _id = atoi(strtok(NULL, "\0"));
 		id = _id;
 		if (server == 1){
 			printf("Servidor SE New ID: %d\n", id);
@@ -59,17 +63,73 @@ void parse_response(char* buf, int server){
 	}
 
 	else if(strncmp(buf, "RES_INFOSE", strlen("RES_INFOSE")) == 0){
-		strtok(buf, "(");
-		int value = atoi(strtok(NULL, ")"));
+		strtok(buf, " ");
+		int value = atoi(strtok(NULL, "\0"));
 		printf("producao atual: %d\n", value);
 	
 	}
 	else if (strncmp(buf, "RES_INFOSCII", strlen("RES_INFOSCII")) == 0){
-		strtok(buf, "(");
-		int value = atoi(strtok(NULL, ")"));
+		strtok(buf, " ");
+		int value = atoi(strtok(NULL, "\0"));
 		printf("consumo atual: %d\n", value);
 	}
 
+	//0 for low, 1 for moderate, 2 for high
+	else if (strncmp(buf, "RES_STATUS", strlen("RES_STATUS")) == 0){
+		strtok(buf, " ");
+		char* status = strtok(NULL, "\0");
+		printf("estado atual: %s\n", status);
+		if (strncmp(status, "baixa", strlen("baixa")) == 0){
+			response_code = 0;
+		}
+		else if (strncmp(status, "moderada", strlen("moderada")) == 0){
+			response_code = 1;
+		}
+		else if (strncmp(status, "alta", strlen("alta")) == 0){
+			response_code = 2;
+		}
+	}
+
+	return response_code;
+}
+
+void treat_status(int status, int sock){
+
+	char buf[BUFSZ];
+	memset(buf, 0, BUFSZ);
+
+	//baixa
+	if (status == 2){
+		send(sock, "REQ_UP", strlen("RES_UP"), 0);
+		recv(sock, buf, BUFSZ, 0);
+		if(strncmp(buf, "RES_UP", strlen("RES_UP")) == 0){
+			strtok(buf, " ");
+			int old_value = atoi(strtok(NULL, " "));
+			int new_value = atoi(strtok(NULL, "\0"));
+			printf("consumo antigo: %d\nconsumo atual: %d\n", old_value, new_value);
+		}
+		
+	}
+	else if (status == 1){
+		send(sock, "REQ_NONE", strlen("REQ_NONE"), 0);
+		recv(sock, buf, BUFSZ, 0);
+
+		if(strncmp(buf, "RES_NONE", strlen("RES_NONE")) == 0){
+			strtok(buf, " ");
+			int current_value = atoi(strtok(NULL, "\0"));
+			printf("consumo antigo: %d\n", current_value);
+		}
+	}
+	else if (status == 0){
+		send(sock, "REQ_DOWN", strlen("REQ_DOWN"), 0);
+		recv(sock, buf, BUFSZ, 0);
+			if(strncmp(buf, "RES_DOWN", strlen("RES_DOWN")) == 0){
+			strtok(buf, " ");
+			int old_value = atoi(strtok(NULL, " "));
+			int new_value = atoi(strtok(NULL, "\0"));
+			printf("consumo antigo: %d\nconsumo atual: %d\n", old_value, new_value);
+		}
+	}
 }
 
 int check_availability(int sock){
@@ -141,10 +201,13 @@ int main(int argc, char **argv) {
 			logexit("EXIT_FAILURE");
 		}
 
+		memset(buf, 0, BUFSZ);
+
 		//print response for SE server initialization
 		count = recv(SE_socket, buf, BUFSZ, 0);
 		parse_response(buf, 1);
 
+		memset(buf, 0, BUFSZ);
 		//print response for SCII server initialization
 		count = recv(SCII_socket, buf, BUFSZ, 0);
 		parse_response(buf, 0);
@@ -152,9 +215,11 @@ int main(int argc, char **argv) {
 	}
 
 	while(available){
+		
 		char buf[BUFSZ];
 		char* message = "";
 		int kill = 0;
+		int status_flag = 0;
 
 		memset(buf, 0, BUFSZ);
 		printf("mensagem> ");
@@ -165,6 +230,9 @@ int main(int argc, char **argv) {
 		//check if the message is a kill message
 		if (strncmp(message, "REQ_REM", strlen("REQ_REM")) == 0){
 			kill = 1;
+		}
+		if(strncmp(message, "REQ_STATUS", strlen("REQ_STATUS")) == 0){
+			status_flag = 1;
 		}
 
 		size_t count = 0;
@@ -180,11 +248,30 @@ int main(int argc, char **argv) {
 			count = send(SCII_socket, message, strlen(kill_message) + 1, 0);
 		}
 
+		//if query condition request
+		else if (status_flag){
+
+			memset(buf, 0, BUFSZ);
+
+			//send message to the SE server
+			count = send(SE_socket, message, strlen(message) + 1, 0);
+			//recieve the status from SE server
+			count = recv(SE_socket, buf, BUFSZ, 0);
+			int response_status = parse_response(buf, 1);
+			treat_status(response_status, SCII_socket);
+
+			//helper message for the SE server to update values
+			count = send(SE_socket, "REQ_REFRESH", strlen("REQ_REFRESH"), 0);
+			memset(buf, 0, BUFSZ);
+			count = recv(SE_socket, buf, BUFSZ, 0);
+			continue;
+		}
+
 		//send message to the current server
-		if(kill == 1 || server == 0){
+		if(!kill && server == 0){
 			count = send(SCII_socket, message, strlen(message) + 1, 0);
 		}
-		else if (kill == 1 || server == 1){
+		else if (!kill && server == 1){
 			count = send(SE_socket, message, strlen(message) + 1, 0);
 		}
 
