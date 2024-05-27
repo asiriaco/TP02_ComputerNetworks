@@ -11,13 +11,13 @@
 
 #define BUFSZ 1024
 
-#define MAX_CLIENTS 3
+#define MAX_CLIENTS 10
 
 int total_clients = 0;
 char* port = "-1";
 int available_clients[MAX_CLIENTS] = {0};
 int info[MAX_CLIENTS] = {0};
-
+int server_type = -1;
 
 void usage(int argc, char **argv) {
     printf("usage: %s <v4|v6> <server port>\n", argv[0]);
@@ -30,6 +30,7 @@ struct client_data {
     struct sockaddr_storage storage;
 };
 
+//method to find the first available client in the array
 int find_first_available_client(){
     for(int i = 0; i < MAX_CLIENTS; i++){
         if(available_clients[i] == 0){
@@ -51,6 +52,7 @@ int generate_random_SCII_value(){
     return rand() % 101;
 }
 
+//method to classify the value of the SE server
 char* eval_SE_value(int value){
     if(value >= 41){
         return "alta";
@@ -63,6 +65,17 @@ char* eval_SE_value(int value){
     }
 }
 
+void print_removal_message(int id){
+    if(server_type == 1){
+        printf("Servidor SE Client %d removed\n", id);
+    }
+    else if (server_type == 0){
+        printf("Servidor SCII Client %d removed\n", id);
+    }
+
+}
+
+//method to parse requests from the client
 char* parse_message(char* buf, int* kill, int *id){
 
     char* message = "";
@@ -72,10 +85,11 @@ char* parse_message(char* buf, int* kill, int *id){
         available_clients[*id] = 1;
         if(strncmp(port, "12345", strlen("12345")) == 0){
             info[*id] = generate_random_SE_value();
-            printf("Value: %d\n", info[*id]);
+            server_type = 1;
         }
         else if (strncmp(port, "54321", strlen("54321")) == 0){
             info[*id] = generate_random_SCII_value();
+            server_type = 0;
         }
         sprintf(ok_message, "RES_ADD %d", *id);
         printf("Client %d added\n", *id);
@@ -86,14 +100,13 @@ char* parse_message(char* buf, int* kill, int *id){
         *kill = 1;
         strtok(buf, " ");
         char* id_str = strtok(NULL, "\0");
-        printf("ID: %s\n", id_str);
         int id = atoi(id_str);
         if(available_clients[id] == 1){
             available_clients[id] = 0;
             info[id] = 0;
             message = "OK(01)";
             total_clients--;
-            printf("Client %d removed\n", id);
+            print_removal_message(id);
         }
         else{
             logerror(02);
@@ -102,41 +115,54 @@ char* parse_message(char* buf, int* kill, int *id){
     }
 
     else if (strncmp(buf, "REQ_INFOSE", strlen("REQ_INFOSE")) == 0){
+        printf("%s\n", buf);
         char value_message[BUFSZ];
         sprintf(value_message, "RES_INFOSE %d", info[*id]);
         message = value_message;
+        printf("%s\n", message);
     }
 
     else if (strncmp(buf, "REQ_INFOSCII", strlen("REQ_INFOSCII")) == 0){
+        printf("%s\n", buf);
         char value_message[BUFSZ];
         sprintf(value_message, "RES_INFOSCII %d", info[*id]);
         message = value_message;
+        printf("%s\n", message);
     }
 
     else if (strncmp(buf, "REQ_STATUS", strlen("REQ_STATUS")) == 0){
+        printf("%s\n", buf);
         char status_message[BUFSZ];
         sprintf(status_message, "RES_STATUS %s", eval_SE_value(info[*id]));
         message = status_message;
+        printf("%s\n", message);
     }
     else if (strncmp(buf, "REQ_UP", strlen("REQ_UP")) == 0){
+        printf("%s\n", buf);
         int old_value = info[*id];
         int new_value = old_value + rand()%(100-old_value);
         info[*id] = new_value;
         char new_value_message[BUFSZ];
         sprintf(new_value_message, "RES_UP %d %d", old_value, new_value);
         message = new_value_message;
+        printf("%s\n", message);        
     }
     else if (strncmp(buf, "REQ_NONE", strlen("REQ_NONE")) == 0){
+        printf("%s\n", buf);
         char none_message[BUFSZ];
         sprintf(none_message, "RES_NONE %d", info[*id]);
+        message = none_message;
+        printf("%s\n", message);
     }
     else if(strncmp(buf, "REQ_DOWN", strlen("REQ_DOWN")) == 0){
+        printf("%s\n", buf);
         int old_value = info[*id];
-        int new_value = rand()%old_value;
+        int new_value = rand()%(old_value+1);
         info[*id] = new_value;
         char new_value_message[BUFSZ];
         sprintf(new_value_message, "RES_DOWN %d %d", old_value, new_value);
         message = new_value_message;
+        printf("%s\n", message);
     }
     else if (strncmp(buf, "REQ_REFRESH", strlen("REQ_REFRESH")) == 0){
         info[*id] = generate_random_SE_value();
@@ -152,7 +178,6 @@ void * client_thread(void *data) {
     int kill = 0;
     char caddrstr[BUFSZ];
     addrtostr(caddr, caddrstr, BUFSZ);
-    printf("[log] connection from %s\n", caddrstr);
 
     while (1)
     {
@@ -207,10 +232,9 @@ int main(int argc, char **argv) {
 
     char addrstr[BUFSZ];
     addrtostr(addr, addrstr, BUFSZ);
-    printf("bound to %s, waiting connections\n", addrstr);
-
+    printf("Starting to listen...\n");
     while (1) {
-        printf("[log] waiting connection on %s\n", addrstr);
+
         struct sockaddr_storage cstorage;
         struct sockaddr *caddr = (struct sockaddr *)(&cstorage);
         socklen_t caddrlen = sizeof(cstorage);

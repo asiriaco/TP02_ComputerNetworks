@@ -65,13 +65,13 @@ int parse_response(char* buf, int server){
 	else if(strncmp(buf, "RES_INFOSE", strlen("RES_INFOSE")) == 0){
 		strtok(buf, " ");
 		int value = atoi(strtok(NULL, "\0"));
-		printf("producao atual: %d\n", value);
+		printf("producao atual: %d kWh\n", value);
 	
 	}
 	else if (strncmp(buf, "RES_INFOSCII", strlen("RES_INFOSCII")) == 0){
 		strtok(buf, " ");
 		int value = atoi(strtok(NULL, "\0"));
-		printf("consumo atual: %d\n", value);
+		printf("consumo atual: %d%%\n", value);
 	}
 
 	//0 for low, 1 for moderate, 2 for high
@@ -93,6 +93,7 @@ int parse_response(char* buf, int server){
 	return response_code;
 }
 
+//method to treat status messages
 void treat_status(int status, int sock){
 
 	char buf[BUFSZ];
@@ -132,6 +133,7 @@ void treat_status(int status, int sock){
 	}
 }
 
+//method to check availability of the servers
 int check_availability(int sock){
 	int result = -1;
 	char buf[BUFSZ];
@@ -291,6 +293,7 @@ int main(int argc, char **argv) {
 		parse_response(buf, server);
 
 		if(kill == 1 && strncmp(buf, "OK(01)", strlen("OK(01)")) == 0){
+			logok(01);
 			break;
 		}
 	}
