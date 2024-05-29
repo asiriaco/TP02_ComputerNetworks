@@ -15,8 +15,10 @@
 
 int total_clients = 0;
 char* port = "-1";
+int consumption = 0;
+int production = 0;
+
 int available_clients[MAX_CLIENTS] = {0};
-int info[MAX_CLIENTS] = {0};
 int server_type = -1;
 
 void usage(int argc, char **argv) {
@@ -84,11 +86,9 @@ char* parse_message(char* buf, int* kill, int *id){
         *id = find_first_available_client();
         available_clients[*id] = 1;
         if(strncmp(port, "12345", strlen("12345")) == 0){
-            info[*id] = generate_random_SE_value();
             server_type = 1;
         }
         else if (strncmp(port, "54321", strlen("54321")) == 0){
-            info[*id] = generate_random_SCII_value();
             server_type = 0;
         }
         sprintf(ok_message, "RES_ADD %d", *id);
@@ -103,7 +103,6 @@ char* parse_message(char* buf, int* kill, int *id){
         int id = atoi(id_str);
         if(available_clients[id] == 1){
             available_clients[id] = 0;
-            info[id] = 0;
             message = "OK(01)";
             total_clients--;
             print_removal_message(id);
@@ -117,7 +116,7 @@ char* parse_message(char* buf, int* kill, int *id){
     else if (strncmp(buf, "REQ_INFOSE", strlen("REQ_INFOSE")) == 0){
         printf("%s\n", buf);
         char value_message[BUFSZ];
-        sprintf(value_message, "RES_INFOSE %d", info[*id]);
+        sprintf(value_message, "RES_INFOSE %d", production);
         message = value_message;
         printf("%s\n", message);
     }
@@ -125,7 +124,7 @@ char* parse_message(char* buf, int* kill, int *id){
     else if (strncmp(buf, "REQ_INFOSCII", strlen("REQ_INFOSCII")) == 0){
         printf("%s\n", buf);
         char value_message[BUFSZ];
-        sprintf(value_message, "RES_INFOSCII %d", info[*id]);
+        sprintf(value_message, "RES_INFOSCII %d", consumption);
         message = value_message;
         printf("%s\n", message);
     }
@@ -133,15 +132,15 @@ char* parse_message(char* buf, int* kill, int *id){
     else if (strncmp(buf, "REQ_STATUS", strlen("REQ_STATUS")) == 0){
         printf("%s\n", buf);
         char status_message[BUFSZ];
-        sprintf(status_message, "RES_STATUS %s", eval_SE_value(info[*id]));
+        sprintf(status_message, "RES_STATUS %s", eval_SE_value(production));
         message = status_message;
         printf("%s\n", message);
     }
     else if (strncmp(buf, "REQ_UP", strlen("REQ_UP")) == 0){
         printf("%s\n", buf);
-        int old_value = info[*id];
+        int old_value = consumption;
         int new_value = old_value + rand()%(100-old_value);
-        info[*id] = new_value;
+        consumption = new_value;
         char new_value_message[BUFSZ];
         sprintf(new_value_message, "RES_UP %d %d", old_value, new_value);
         message = new_value_message;
@@ -150,22 +149,22 @@ char* parse_message(char* buf, int* kill, int *id){
     else if (strncmp(buf, "REQ_NONE", strlen("REQ_NONE")) == 0){
         printf("%s\n", buf);
         char none_message[BUFSZ];
-        sprintf(none_message, "RES_NONE %d", info[*id]);
+        sprintf(none_message, "RES_NONE %d", consumption);
         message = none_message;
         printf("%s\n", message);
     }
     else if(strncmp(buf, "REQ_DOWN", strlen("REQ_DOWN")) == 0){
         printf("%s\n", buf);
-        int old_value = info[*id];
+        int old_value = consumption;
         int new_value = rand()%(old_value+1);
-        info[*id] = new_value;
+        consumption = new_value;
         char new_value_message[BUFSZ];
         sprintf(new_value_message, "RES_DOWN %d %d", old_value, new_value);
         message = new_value_message;
         printf("%s\n", message);
     }
     else if (strncmp(buf, "REQ_REFRESH", strlen("REQ_REFRESH")) == 0){
-        info[*id] = generate_random_SE_value();
+        production = generate_random_SE_value();
         message = "REFRESH OK";
     }
     return message;
@@ -233,6 +232,10 @@ int main(int argc, char **argv) {
     char addrstr[BUFSZ];
     addrtostr(addr, addrstr, BUFSZ);
     printf("Starting to listen...\n");
+
+    production = generate_random_SE_value();
+    consumption = generate_random_SCII_value();
+
     while (1) {
 
         struct sockaddr_storage cstorage;
